@@ -1,0 +1,18 @@
+name: TRIBAL_preprocess
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # Core Python
+  - python>=3.8
+  - pip
+  - pandas
+  - numpy
+  - scipy
+  - pyyaml
+  - tqdm
+prefix: $HOME/miniconda3/envs/TRIBAL_preprocess
+
+# Usage:
+# conda env create -f environment.yml
+# conda activate tribal_preprocess

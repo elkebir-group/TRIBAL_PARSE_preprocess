@@ -1,0 +1,78 @@
+dataset:
+  base_path: './PARSE_Bcells'
+  all_genes_file: 'all_genes.csv'
+  metadata_file: 'cell_metadata.csv'
+  clonotype_file: 'clonotype_frequency.tsv'
+  annotation_file: 'bcr_annotation_airr.tsv'
+  barcodes_file: 'barcode_report.tsv'
+
+barcodes:
+  multiplet_column: 'isMultiplet'
+  barcode_column: 'Barcode'
+  full_length_column: 'full_length'
+  cdr3_columns:
+    - 'IGK_cdr3_aa'
+    - 'IGL_cdr3_aa'
+    - 'IGH_cdr3_aa'
+  chain_columns:
+    heavy_full_length: 'IGH_full_length'
+    kappa_full_length: 'IGK_full_length'
+    lambda_full_length: 'IGL_full_length'
+    heavy_isotype: 'IGH_C'
+
+clonotype_columns:
+  clonotype_column: 'clonotype'
+  clonotype_id_column: 'clonotype_id'
+  barcode_column: 'Barcode'
+  clonotype_mapping_columns:
+    light_chain: 'IGK/L'
+    heavy_chain: 'IGH'
+
+annotation:
+  cell_barcode_column: 'cell_barcode'
+  locus_column: 'locus'
+  sequence_column: 'sequence'
+  v_call_column: 'v_call'
+  d_call_column: 'd_call'
+  j_call_column: 'j_call'
+  germline_alignment_column: 'germline_alignment'
+  transcript_count_column: "transcript_count"
+  chain_types:
+    heavy: 'IGH'
+    kappa: 'IGK'
+    lambda: 'IGL'
+
+columns:
+  records: 
+    - 'cellid'
+    - 'clonotype'
+    - 'heavy_chain_isotype'
+    - 'heavy_chain_seq'
+    - 'heavy_chain_v_allele'
+    - 'light_chain_seq'
+    - 'light_chain_v_allele'
+  clono_records:
+    - 'clonotype'
+    - 'heavy_chain_root'
+    - 'light_chain_root'
+
+output:
+  seq_data_file_script1: './TRIBAL_seq_data_by_cdrh3.csv'
+  root_data_file_script1: './TRIBAL_root_data_by_cdrh3.csv'
+  clonotype_map_file_script1: 'clonotype_by_cdrh3.json'
+  seq_data_file_script2: './TRIBAL_seq_data_by_alleles.csv'
+  root_data_file_script2: './TRIBAL_root_data_by_alleles.csv'
+  clonotype_map_file_script2: 'clonotype_by_alleles.json'
+
+consensus:
+  nucleotides: ['A', 'T', 'C', 'G', 'N']
+
+logging:
+  level: 'INFO'
+  format: '%(asctime)s - %(levelname)s - %(message)s'
+  failed_cells_file: 'failed_cells_report.csv'
+
+parameters:
+  required_loci: 2
+  min_consensus_sequences: 1
+  min_cells_per_clonotype: 2
