@@ -29,7 +29,23 @@ conda activate TRIBAL_preprocess
 To run the pipeline, use the following command:
 
 ```bash
-python preprocess.py --config <input_file> 
+python preprocess.py --config <input_file> [--multiplets <bool>]
+```
+
+### Command Line Arguments
+
+- `--config`: Path to the configuration YAML file (required)
+- `--multiplets`: Boolean flag to include multiplet analysis (optional, default=False)
+  - When set to `True`, the pipeline will:
+    - Process cells marked as multiplets
+    - Analyze cells with multiple heavy/light chain pairs
+    - Attempt to match multiplet chains based on transcript counts and existing clonotypes
+    - Add multiplet-derived sequences to the clonotype pool
+  - When set to `False`, multiplets are filtered out
+
+Example usage with multiplets:
+```bash
+python preprocess.py --config config.yaml --multiplets True
 ```
 
 ## Preprocessing Approaches
