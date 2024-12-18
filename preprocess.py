@@ -15,8 +15,9 @@ from tqdm import tqdm
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Process BCR data using allele information')
+    parser = argparse.ArgumentParser(description='Process BCR data using CDR3 information')
     parser.add_argument('--config', type=str, help='Path to config YAML file', default='config.yaml')
+    parser.add_argument('--multiplets', type=bool, help='Use mutliplets in data', default=False)
     return parser.parse_args()
 
 def consensus(sequences, nucleotides):
@@ -36,7 +37,7 @@ def consensus(sequences, nucleotides):
 
     return ''.join(cons_df.idxmax(axis=1))
 
-def process_data(config):
+def process_data(config, multiplet):
     """Main processing function"""
     # Load input files
     base = config['dataset']['base_path']
@@ -89,15 +90,15 @@ def process_data(config):
         barcodes_rm_multiplet_full_length[config['barcodes']['barcode_column']].isin(
             cell_barcode_by_locus_num_more[config['annotation']['cell_barcode_column']].to_list()
         )
-    ]
+    ].copy()
 
     # Create clonotype mapping from CDR3 sequences
-    barcodes_full_length_more.loc[:, config['clonotype_columns']['clonotype_column']] = barcodes_full_length_more[
+    barcodes_full_length_more[config['clonotype_columns']['clonotype_column']] = barcodes_full_length_more[
         config['barcodes']['cdr3_columns']
     ].apply(lambda row: '_'.join(row.dropna()), axis=1)
 
     # Map clonotypes to IDs
-    clonotype.loc[:, config['clonotype_columns']['clonotype_column']] = clonotype[
+    clonotype[config['clonotype_columns']['clonotype_column']] = clonotype[
         [config['clonotype_columns']['clonotype_mapping_columns']['light_chain'],
          config['clonotype_columns']['clonotype_mapping_columns']['heavy_chain']]
     ].apply(lambda row: '_'.join(row.dropna()), axis=1)
@@ -108,10 +109,10 @@ def process_data(config):
     ))
 
     # Add clonotype IDs to barcodes
-    barcodes_full_length_more.loc[:, config['clonotype_columns']['clonotype_id_column']] = \
+    barcodes_full_length_more[config['clonotype_columns']['clonotype_id_column']] = \
         barcodes_full_length_more[config['clonotype_columns']['clonotype_column']].map(clonotype_map)
 
-    # Group by clonotype ID (fixed deprecation warning)
+    # Group by clonotype ID
     barcodes_group = barcodes_full_length_more.groupby(
         config['clonotype_columns']['clonotype_id_column'],
         as_index=False
@@ -119,13 +120,131 @@ def process_data(config):
         config['barcodes']['barcode_column']: list
     })
 
+    barcodes_group['count'] = barcodes_group[config['barcodes']['barcode_column']].str.len()
+
+    print(f'Number of clonotypes before multiplet filtering: {len(barcodes_group)}')
+
+    if multiplet:
+        # Process multiplet cells
+        barcode_multiplet = barcodes[barcodes[config['barcodes']['multiplet_column']] == 1]
+        barcode_multiplet_full_length = barcode_multiplet[
+            (barcode_multiplet[config['barcodes']['chain_columns']['heavy_full_length']] == 1) & 
+            ((barcode_multiplet[config['barcodes']['chain_columns']['kappa_full_length']] == 1) | 
+                (barcode_multiplet[config['barcodes']['chain_columns']['lambda_full_length']] == 1))
+        ]
+        
+        # Get annotations for multiplet cells
+        annotation_multiplet_full_length = annotation[
+            (annotation[config['annotation']['cell_barcode_column']].isin(
+                barcode_multiplet_full_length[config['barcodes']['barcode_column']])) & 
+            (annotation[config['barcodes']['full_length_column']] == 1)
+        ].copy()
+
+        # Group by cell barcode and analyze chain combinations
+        annotation_multiplet_grouped = annotation_multiplet_full_length.groupby(
+            config['annotation']['cell_barcode_column']
+        ).agg({
+            config['annotation']['locus_column']: lambda x: list(x),
+            config['barcodes']['full_length_column']: 'sum'
+        })
+
+        # Count chain types
+        for chain_type in ['heavy', 'kappa', 'lambda']: #['IGH', 'IGK', 'IGL']:
+            annotation_multiplet_grouped[f'{config['annotation']['chain_types'][chain_type]}_count'] = annotation_multiplet_grouped[
+                config['annotation']['locus_column']
+            ].apply(lambda x: x.count(config['annotation']['chain_types'][chain_type]))
+
+        # Filter valid chain combinations
+        valid_multiplets = annotation_multiplet_grouped[
+            (annotation_multiplet_grouped[config['barcodes']['full_length_column']] >= 2) & 
+            ((annotation_multiplet_grouped['IGH_count'] == annotation_multiplet_grouped['IGK_count']) | 
+             (annotation_multiplet_grouped['IGH_count'] == annotation_multiplet_grouped['IGL_count']))
+        ].copy()
+
+        def process_multiplet_cell(cell_data):
+            """Process individual multiplet cell data"""
+            heavy_chains = cell_data[cell_data[config['annotation']['locus_column']] == config['annotation']['chain_types']['heavy']]
+            light_chains = cell_data[cell_data[config['annotation']['locus_column']].isin([
+                config['annotation']['chain_types']['kappa'],
+                config['annotation']['chain_types']['lambda']
+            ])]
+            
+            pairs = []
+            for i, (h_idx, heavy) in enumerate(heavy_chains.iterrows()):
+                heavy_cdr3 = barcode_multiplet.loc[
+                    barcode_multiplet[config['barcodes']['barcode_column']] == heavy[config['annotation']['cell_barcode_column']], 
+                    config['barcodes']['cdr3_columns'][0]
+                ].iloc[0]
+                
+                for l_idx, light in light_chains.iterrows():
+                    light_cdr3 = barcode_multiplet.loc[
+                        barcode_multiplet[config['barcodes']['barcode_column']] == light[config['annotation']['cell_barcode_column']],
+                        config['barcodes']['cdr3_columns'][1:]
+                    ].iloc[0].dropna().iloc[0]
+                    
+                    cdr3_pair = f"{heavy_cdr3}_{light_cdr3}"
+                    if cdr3_pair in clonotype_map:
+                        clonotype_id = clonotype_map[cdr3_pair]
+                        pairs.append({
+                            'heavy': heavy,
+                            'light': light,
+                            'clonotype_id': clonotype_id,
+                            'cdr3_pair': cdr3_pair
+                        })
+                    else:
+                        # Create new clonotype ID
+                        clonotype_ids = [int(value.split('_')[1]) for value in clonotype_map.values()]
+                        new_clonotype_id = f'clonotype_{max(clonotype_ids) + 1}'
+                        clonotype_map[cdr3_pair] = new_clonotype_id
+                        pairs.append({
+                            'heavy': heavy,
+                            'light': light,
+                            'clonotype_id': new_clonotype_id,
+                            'cdr3_pair': cdr3_pair
+                        })
+            
+            # Sort pairs by existing clonotype frequency
+            pairs.sort(key=lambda x: barcodes_group.loc[
+                barcodes_group[config['clonotype_columns']['clonotype_id_column']] == x['clonotype_id'],
+                'count'
+            ].iloc[0] if x['clonotype_id'] in barcodes_group[config['clonotype_columns']['clonotype_id_column']].values else 0, 
+                reverse=True)
+            
+            return pairs[:len(heavy_chains)]
+
+        # Process each multiplet cell and update mappings
+        for cell in valid_multiplets.index:
+            cell_data = annotation_multiplet_full_length[
+                annotation_multiplet_full_length['cell_barcode'] == cell
+            ]
+            
+            pairs = process_multiplet_cell(cell_data)
+            for i, pair in enumerate(pairs):
+                cell_id = f"{cell}_{i}"
+                clonotype_id = pair['clonotype_id']
+                
+                # Update barcodes_group
+                if clonotype_id in barcodes_group[config['clonotype_columns']['clonotype_id_column']].values:
+                    idx = barcodes_group[config['clonotype_columns']['clonotype_id_column']] == clonotype_id
+                    barcodes_group.loc[idx, config['barcodes']['barcode_column']].iloc[0].append(cell_id)
+                    barcodes_group.loc[idx, 'count'] += 1
+                else:
+                    new_row = pd.DataFrame({
+                        config['clonotype_columns']['clonotype_id_column']: [clonotype_id],
+                        config['barcodes']['barcode_column']: [[cell_id]],
+                        'count': [1]
+                    })
+                    barcodes_group = pd.concat([barcodes_group, new_row], ignore_index=True)
+
+    print(f'Number of clonotypes after multiplet filtering: {len(barcodes_group)}')
+
     # Filter for clonotypes with multiple cells
     barcodes_group = barcodes_group[
-        barcodes_group[config['barcodes']['barcode_column']].str.len() >= 
-        config['parameters']['min_cells_per_clonotype']]
+        barcodes_group['count'] >= config['parameters']['min_cells_per_clonotype']
+    ]
+    
     # Add clonotype information to the grouped DataFrame
-    barcodes_group.loc[:, config['clonotype_columns']['clonotype_column']] = barcodes_group.index
-
+    barcodes_group[config['clonotype_columns']['clonotype_column']] = barcodes_group.index
 
     print(f'{len(barcodes_group)} clonotypes with multiple cells')
 
@@ -153,9 +272,21 @@ def process_data(config):
                         annotation_rm_multiplet_full_length[config['annotation']['cell_barcode_column']] == cell]
                     
                     if len(temp[config['annotation']['locus_column']].unique()) < 2:
-                        logging.error(f"Cell {cell} does not have both heavy and light chains")
-                        repeat_locus.append(cell)
-                        continue
+                        if multiplet:
+                            ids = cell.split('_')
+                            if len(ids) > 5:
+                                id = '_'.join(cell.split('_')[:-1])
+                            else:
+                                id = '_'.join(cell.split('_'))
+                            temp = annotation_multiplet_full_length[annotation_multiplet_full_length[config['annotation']['cell_barcode_column']] == id]
+                            if len(temp[config['annotation']['locus_column']].unique()) < 2:
+                                logging.error(f"Cell {cell} does not have both heavy and light chains")
+                                repeat_locus.append(cell)
+                                continue
+                        else:
+                            logging.error(f"Cell {cell} does not have both heavy and light chains")
+                            repeat_locus.append(cell)
+                            continue
 
                     try:
                         # Check for heavy chain presence
@@ -195,8 +326,18 @@ def process_data(config):
                                 barcode_rm_multiplet[config['barcodes']['barcode_column']] == cell, 
                                 config['barcodes']['chain_columns']['heavy_isotype']].values[0]
                         except IndexError:
-                            logging.error(f"Cell {cell} is missing isotype information in barcode report")
-                            IGH_C = None
+                            try:
+                                ids = cell.split('_')
+                                if len(ids) > 5:
+                                    id = '_'.join(cell.split('_')[:-1])
+                                else:
+                                    id = '_'.join(cell.split('_'))
+                                IGH_C = barcode_multiplet.loc[
+                                barcode_multiplet[config['barcodes']['barcode_column']] == id, 
+                                config['barcodes']['chain_columns']['heavy_isotype']].values[0]
+                            except:
+                                logging.error(f"Cell {cell} is missing isotype information in barcode report")
+                                IGH_C = None
                         
                         # Get germline alignments
                         try:
@@ -263,7 +404,7 @@ def process_data(config):
     
     return seq_data, root_data, clonotype_map
 
-def main(config_path):
+def main(config_path, multiplet):
     # Load configuration
     with open(config_path, 'r') as config_file:
         config = yaml.safe_load(config_file)
@@ -274,8 +415,8 @@ def main(config_path):
     logging.info(f"Starting processing with config file: {config_path}")
     
     try:
-        # Process the data
-        seq_data, root_data, clonotype_map = process_data(config)
+        # Process the data with multiplet parameter
+        seq_data, root_data, clonotype_map = process_data(config, multiplet)
         
         # Log processing statistics
         logging.info(f"Processing completed:")
@@ -298,4 +439,4 @@ def main(config_path):
 
 if __name__ == "__main__":
     args = parse_args()
-    main(args.config)
+    main(args.config, args.multiplets)

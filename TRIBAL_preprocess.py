@@ -72,7 +72,7 @@ def process_data(config, multiplet):
         "Number of barcodes with full-length chains does not match"
 
     annotation_rm_multiplet_full_length = annotation[(annotation[config['annotation']['cell_barcode_column']].isin(
-        barcodes_rm_multiplet_full_length_2[config['barcodes']['barcode_column']])) & (annotation['full_length'] == 1)]
+        barcodes_rm_multiplet_full_length_2[config['barcodes']['barcode_column']])) & (annotation[config['barcodes']['full_length_column']] == 1)]
 
     print(f'Number of cells with full-length chains: {len(barcodes_rm_multiplet_full_length_2)}')
 
@@ -133,19 +133,19 @@ def process_data(config, multiplet):
             ((barcode_multiplet[config['barcodes']['chain_columns']['kappa_full_length']] == 1) | 
                 (barcode_multiplet[config['barcodes']['chain_columns']['lambda_full_length']] == 1))
         ]
-        annotation_multiplet_full_length = annotation[(annotation['cell_barcode'].isin(barcode_multiplet_full_length['Barcode'])) & (annotation['full_length'] == 1)]
+        annotation_multiplet_full_length = annotation[(annotation[config['annotation']['cell_barcode_column']].isin(barcode_multiplet_full_length['Barcode'])) & (annotation[config['barcodes']['full_length_column']] == 1)]
 
-        annotation_multiplet_full_length_grouped = annotation_multiplet_full_length.groupby('cell_barcode').agg({
+        annotation_multiplet_full_length_grouped = annotation_multiplet_full_length.groupby(config['annotation']['cell_barcode_column']).agg({
             'locus': lambda x: list(x), 
-            'full_length': 'sum'
+            config['barcodes']['full_length_column']: 'sum'
         })
 
-        annotation_multiplet_full_length_grouped['IGH_count'] = annotation_multiplet_full_length_grouped['locus'].apply(lambda x: x.count("IGH"))
-        annotation_multiplet_full_length_grouped['IGK_count'] = annotation_multiplet_full_length_grouped['locus'].apply(lambda x: x.count('IGK'))
-        annotation_multiplet_full_length_grouped['IGL_count'] = annotation_multiplet_full_length_grouped['locus'].apply(lambda x: x.count('IGL'))
+        annotation_multiplet_full_length_grouped['IGH_count'] = annotation_multiplet_full_length_grouped['locus'].apply(lambda x: x.count(config['annotation']['chain_types']['heavy'])) 
+        annotation_multiplet_full_length_grouped['IGK_count'] = annotation_multiplet_full_length_grouped['locus'].apply(lambda x: x.count(config['annotation']['chain_types']['kappa']))
+        annotation_multiplet_full_length_grouped['IGL_count'] = annotation_multiplet_full_length_grouped['locus'].apply(lambda x: x.count(config['annotation']['chain_types']['lambda']))
 
         annotation_multiplet_full_length_grouped_filtered = annotation_multiplet_full_length_grouped[
-            (annotation_multiplet_full_length_grouped['full_length'] >= 2) & 
+            (annotation_multiplet_full_length_grouped[config['barcodes']['full_length_column']] >= 2) & 
             ((annotation_multiplet_full_length_grouped['IGH_count'] == annotation_multiplet_full_length_grouped['IGK_count']) | 
              (annotation_multiplet_full_length_grouped['IGH_count'] == annotation_multiplet_full_length_grouped['IGL_count']))
         ].copy()
@@ -160,7 +160,7 @@ def process_data(config, multiplet):
         )
 
         annotation_multiplet_full_length_valid = annotation_multiplet_full_length[
-            annotation_multiplet_full_length['cell_barcode'].isin(
+            annotation_multiplet_full_length[config['annotation']['cell_barcode_column']].isin(
                 annotation_multiplet_full_length_grouped_filtered.index)].copy()
 
         mapping_dict = {
@@ -173,7 +173,7 @@ def process_data(config, multiplet):
 
         # Update all columns at once
         for col, mapping in mapping_dict.items():
-            annotation_multiplet_full_length_valid[col] = annotation_multiplet_full_length_valid['cell_barcode'].map(mapping)
+            annotation_multiplet_full_length_valid[col] = annotation_multiplet_full_length_valid[config['annotation']['cell_barcode_column']].map(mapping)
 
         # For the call columns
         call_columns = [
@@ -184,13 +184,13 @@ def process_data(config, multiplet):
         annotation_multiplet_full_length_valid[call_columns] = \
             annotation_multiplet_full_length_valid[call_columns].fillna('NA')
 
-        multiplet_cells = annotation_multiplet_full_length_valid['cell_barcode'].unique()
+        multiplet_cells = annotation_multiplet_full_length_valid[config['annotation']['cell_barcode_column']].unique()
 
-        clonotype_by_allele.loc[:, 'clonotype'] = clonotype_by_allele['v_call'].str.replace(',','_') + ',' + clonotype_by_allele['d_call'].str.replace(',','_') + ',' + clonotype_by_allele['j_call'].str.replace(',','_')
+        clonotype_by_allele.loc[:, config['clonotype_columns']['clonotype_column']] = clonotype_by_allele[config['annotation']['v_call_column']].str.replace(',','_') + ',' + clonotype_by_allele['d_call'].str.replace(',','_') + ',' + clonotype_by_allele['j_call'].str.replace(',','_')
         clonotype_map_reverse = {v: k for k, v in clonotype_map.items()}
 
 
-        clonotype_by_allele.loc[:, 'clonotype_id'] = clonotype_by_allele['clonotype'].map(clonotype_map_reverse)
+        clonotype_by_allele.loc[:, config['clonotype_columns']['clonotype_id_column']] = clonotype_by_allele[config['clonotype_columns']['clonotype_column']].map(clonotype_map_reverse)
 
         # Initialize new_dataframe with explicit dtypes for all columns
         column_dtypes = {col: annotation_multiplet_full_length_valid[col].dtype 
@@ -236,7 +236,7 @@ def process_data(config, multiplet):
                 for heavy, light in itertools.product(heavy_chains.iterrows(), light_chains.iterrows()):
                     heavy = heavy[1]
                     light = light[1]
-                    clonotype_key = f"{heavy['v_call']}_{light['v_call']},{heavy['d_call']}_{light['d_call']},{heavy['j_call']}_{light['j_call']}"
+                    clonotype_key = f"{heavy[config['annotation']['v_call_column']]}_{light[config['annotation']['v_call_column']]},{heavy['d_call']}_{light['d_call']},{heavy['j_call']}_{light['j_call']}"
                     clonotype_id = clonotype_map_reverse.get(clonotype_key, None)
 
                     # print(clonotype_key, clonotype_id)
@@ -280,15 +280,15 @@ def process_data(config, multiplet):
                         # update_clonotype(heavy, light, clonotype_map, clonotype_map_reverse, clonotype_by_allele)
                 if pairs:
                     for i, pair in enumerate(pairs):
-                        pair['cell_barcode'] = pair['cell_barcode'] + f"_{i}"
+                        pair[config['annotation']['cell_barcode_column']] = pair[config['annotation']['cell_barcode_column']] + f"_{i}"
                         update_clonotype(pair.iloc[0], pair.iloc[1], clonotype_map, clonotype_map_reverse, clonotype_by_allele)
                         # Update the original pairs list
                         pairs[i] = pair
-                        # print(pairs[i]['cell_barcode'])
+                        # print(pairs[i][config['annotation']['cell_barcode_column']])
                         
 
                 temp = pd.concat(pairs, ignore_index=True)
-                # print(temp['cell_barcode'])
+                # print(temp[config['annotation']['cell_barcode_column']])
             
             return temp
 
@@ -307,7 +307,7 @@ def process_data(config, multiplet):
 
         def is_clonotype_match(heavy, light, clonotype_map, clonotype_map_reverse):
             """Check if the given pair exists in the clonotype map."""
-            clonotype_key = f"{heavy['v_call']}_{light['v_call']},{heavy['d_call']}_{light['d_call']},{heavy['j_call']}_{light['j_call']}"
+            clonotype_key = f"{heavy[config['annotation']['v_call_column']]}_{light[config['annotation']['v_call_column']]},{heavy['d_call']}_{light['d_call']},{heavy['j_call']}_{light['j_call']}"
             return clonotype_key in clonotype_map_reverse.keys()
 
         def combine_pairs(heavy, light):
@@ -340,7 +340,7 @@ def process_data(config, multiplet):
             """Update clonotype maps and clonotype-to-cell relationships."""
             global new_dataframe
             # print(type(heavy), type(light))
-            clonotype_key = f"{heavy['v_call']}_{light['v_call']},{heavy['d_call']}_{light['d_call']},{heavy['j_call']}_{light['j_call']}"
+            clonotype_key = f"{heavy[config['annotation']['v_call_column']]}_{light[config['annotation']['v_call_column']]},{heavy['d_call']}_{light['d_call']},{heavy['j_call']}_{light['j_call']}"
             clonotype_id = clonotype_map_reverse.get(clonotype_key, None)
 
             if clonotype_id is None:
@@ -352,28 +352,28 @@ def process_data(config, multiplet):
                 row_idx = clonotype_by_allele[clonotype_by_allele['clonotype_id'] == clonotype_id].index[0]
                 clonotype_by_allele.at[row_idx, 'count'] += 1
                 # clonotype_by_allele.at[row_idx, 'len'] += 1
-                clonotype_by_allele.at[row_idx, 'indices'] = list(set(clonotype_by_allele.at[row_idx, 'indices'] + [heavy['cell_barcode']]))
+                clonotype_by_allele.at[row_idx, 'indices'] = list(set(clonotype_by_allele.at[row_idx, 'indices'] + [heavy[config['annotation']['cell_barcode_column']]]))
             else:
                 new_row = {
-                    'v_call': f"{heavy['v_call']},{light['v_call']}",
-                    'd_call': f"{heavy['d_call']},{light['d_call']}",
-                    'j_call': f"{heavy['j_call']},{light['j_call']}",
+                    config['annotation']['v_call_column']: f"{heavy[config['annotation']['v_call_column']]},{light[config['annotation']['v_call_column']]}",
+                    config['annotation']['d_call_column']: f"{heavy[config['annotation']['d_call_column']]},{light[config['annotation']['d_call_column']]}",
+                    config['annotation']['j_call_column']: f"{heavy[config['annotation']['j_call_column']]},{light[config['annotation']['j_call_column']]}",
                     'count': 1,
-                    'indices': [heavy['cell_barcode']],
+                    'indices': [heavy[config['annotation']['cell_barcode_column']]],
                     # 'len': 1,
-                    'clonotype': clonotype_key,
-                    'clonotype_id': clonotype_id
+                    config['clonotype_columns']['clonotype_column']: clonotype_key,
+                    config['clonotype_columns']['clonotype_id_column']: clonotype_id
                 }
                 clonotype_by_allele.loc[len(clonotype_by_allele)] = new_row
                 # clonotype_by_allele = pd.concat([clonotype_by_allele, pd.DataFrame([new_row])], ignore_index=True)
                 # print(f'length of clonotype_by_allele has been changed to: {len(clonotype_by_allele)}')
 
         # Example usage:
-        multiplet_cells = annotation_multiplet_full_length_valid['cell_barcode'].unique()
+        multiplet_cells = annotation_multiplet_full_length_valid[config['annotation']['cell_barcode_column']].unique()
 
         for cell in multiplet_cells:
             df = annotation_multiplet_full_length_valid[
-                annotation_multiplet_full_length_valid['cell_barcode'] == cell].copy()
+                annotation_multiplet_full_length_valid[config['annotation']['cell_barcode_column']] == cell].copy()
             temp = process_dataframe(df, clonotype_map, clonotype_map_reverse, clonotype_by_allele)
             
             # Only concatenate if temp is not empty
@@ -472,7 +472,7 @@ def process_data(config, multiplet):
                                 barcode_multiplet[config['barcodes']['barcode_column']] == id, 
                                 config['barcodes']['chain_columns']['heavy_isotype']].values[0]
                             except:
-                                logging.error(f"Cell {cell} is missing isotype information in barcode report")
+                                logging.error(f"Cell {id} is missing isotype information in barcode report")
                                 IGH_C = None
                         
                         # Get germline alignments

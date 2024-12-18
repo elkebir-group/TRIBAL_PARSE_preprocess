@@ -29,7 +29,7 @@ conda activate TRIBAL_preprocess
 To run the pipeline, use the following command:
 
 ```bash
-python preprocess.py --config <input_file> [--multiplets <bool>]
+python TRIBAL_preprocess.py --config <input_file> [--multiplets <bool>]
 ```
 
 ### Command Line Arguments
@@ -45,7 +45,7 @@ python preprocess.py --config <input_file> [--multiplets <bool>]
 
 Example usage with multiplets:
 ```bash
-python preprocess.py --config config.yaml --multiplets True
+python TRIBAL_preprocess.py --config config.yaml --multiplets True
 ```
 
 ## Preprocessing Approaches

@@ -1,5 +1,5 @@
 dataset:
-  base_path: '$HOME/data/PARSE_Bcells'
+  base_path: '~/data/PARSE_Bcells'
   all_genes_file: 'all_genes.csv'
   metadata_file: 'cell_metadata.csv'
   clonotype_file: 'clonotype_frequency.tsv'
